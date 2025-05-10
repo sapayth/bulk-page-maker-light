@@ -16,7 +16,7 @@
   "author": "Sapayth H.",
   "license": "GPL-2.0-or-later",
   "devDependencies": {
-    "@wordpress/scripts": "^26.19.0",
+    "@wordpress/scripts": "^30.16.0",
     "autoprefixer": "^10.4.16",
     "chokidar": "^3.5.3",
     "postcss": "^8.4.31",
