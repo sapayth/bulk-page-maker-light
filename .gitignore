@@ -19,7 +19,6 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment files
-.env
 
 # Editor directories and files
 .vscode/
@@ -36,3 +35,4 @@ Thumbs.db
 
 # AI/Tooling (keep .cursor directory, do not ignore)
 # .cursor/ (intentionally NOT ignored)
+config.bat
