@@ -2,13 +2,13 @@
 /*
 Plugin Name: Bulk Page Maker Light
 Description: A Light plugin to generate bulk WordPress Pages or Posts
-Version: 1.4.0
+Version: 2.0.0
 Author: Sapayth H.
 Author URI: http://sapayth.com
 License: GPLv2 or later
-Requires at least: 5.4
+Requires at least: 5.6
 Requires PHP: 5.6
-Text Domain: sh-bpm-light
+Text Domain: bpm-light
 */
 
 /*
@@ -24,7 +24,7 @@ Text Domain: sh-bpm-light
  * **********************************************************************
 */
 
-if ( ! defined( 'ABSPATH' ) ) {
+if( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
@@ -37,18 +37,7 @@ if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
 */
 final class Bulk_Page_Maker {
 
-    /**
-     * Plugin version
-     *
-     * @var string
-     */
-    const VERSION = '1.4.0';
-
-    // the instance to hold the class object
-    protected static $instance = null;
-
-    // Holds various class instances
-    private $container = [];
+    const VERSION = '2.0.0';
 
     /*
     * class constructor
@@ -56,61 +45,59 @@ final class Bulk_Page_Maker {
     private function __construct() {
         $this->define_constants();
 
-        register_activation_hook( __FILE__, [ $this, 'activate' ] );
-        register_deactivation_hook( __FILE__, [ $this, 'deactivate' ] );
+        register_activation_hook( __FILE__, [ $this, 'activate'] );
+        register_deactivation_hook( __FILE__, [ $this, 'deactivate'] );
 
-        add_action( 'init', [ $this, 'init_plugin' ] );
+        add_action( 'init', [$this, 'init_plugin'] );
     }
 
     /*
-    * Initializes a singleton instance
+    * initializes a singleton instance
     */
     public static function init() {
-        if ( ! is_null( self::$instance ) ) {
-            return self::$instance;
+        static $instance = false;
+
+        if( ! $instance ) {
+            $instance = new self();
         }
 
-        self::$instance = new self();
-
-        return self::$instance;
+        return $instance;
     }
 
     /**
-     * Define all plugin constants
-     *
-     * @return void
+     * constants
      */
     public function define_constants() {
         $this->define( 'BPM_VERSION', self::VERSION );
         $this->define( 'BPM_FILE', __FILE__ );
         $this->define( 'BPM_PATH', __DIR__ );
-        $this->define( 'BPM_ADMIN_PATH', BPM_PATH . '/includes/Admin' );
-        $this->define( 'BPM_URL', plugins_url( '', BPM_FILE ) );
+        $this->define( 'BPM_URL', plugins_url('', BPM_FILE) );
         $this->define( 'BPM_ASSETS', BPM_URL . '/assets' );
     }
 
     /**
      * Define constant if not already set.
      *
-     * @param string    $const  Constant name.
+     * @param string    $name  Constant name.
      * @param mixed     $value Constant value.
      */
     private function define( $const, $value ) {
-        if ( ! defined( $const ) ) {
+        if( ! defined( $const ) ) {
             define( $const, $value );
         }
     }
 
     /**
-     * Initialize the plugin
-     *
+     * initialize the plugin
      * @return void
      */
     public function init_plugin() {
-        $this->container['assets'] = new Bulk\Page\Maker\Assets();
+        new Bulk\Page\Maker\Assets();
 
-        if ( is_admin() ) {
-            $this->container['admin'] = new Bulk\Page\Maker\Admin();
+        new Bulk\Page\Maker\Api();
+
+        if( is_admin() ) {
+            new Bulk\Page\Maker\Admin();
         }
     }
 
@@ -139,25 +126,10 @@ final class Bulk_Page_Maker {
             delete_transient( $transient_posts );
         }
     }
-
-    /**
-     * Magic getter to bypass referencing objects
-     *
-     * @since 1.4.0
-     *
-     * @param string $prop
-     *
-     * @return Class Instance
-     */
-    public function __get( $prop ) {
-        if ( array_key_exists( $prop, $this->container ) ) {
-            return $this->container[ $prop ];
-        }
-    }
 }
 
 /**
-* Initialize the main plugin
+* initialize the main plugin
 */
 if ( ! function_exists( 'bpmaker_make_page' ) ) {
     function bpmaker_make_page() {

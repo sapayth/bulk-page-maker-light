@@ -8,36 +8,34 @@ if( ! class_exists( 'WP_List_Table' ) ) {
 
 
 class Pages_List extends \WP_List_Table {
-
+	
 	public function __construct() {
-		parent::__construct(
-            [
-			    'plural'   => 'Pages',
-			    'singular' => 'Page',
-			    'ajax'     => false,
-		    ]
-        );
+		parent::__construct( [
+			'plural'   => 'Pages',
+			'singular' => 'Page',
+			'ajax'     => false,
+		] );
 	}
 
 	public function get_columns() {
 		return [
 			'cb'         => '<input type="checkbox" />',
-			'post_title' => __( 'Title', 'sh-bpm-light' ),
-			'created_by' => __( 'Author', 'sh-bpm-light' ),
-			'post_type'  => __( 'Type', 'sh-bpm-light' ),
-			'post_date'  => __( 'Date', 'sh-bpm-light' ),
+			'post_title' => __( 'Title', 'bulk-page-maker-light' ),
+			'created_by' => __( 'Author', 'bulk-page-maker-light' ),
+			'post_type'  => __( 'Type', 'bulk-page-maker-light' ),
+			'post_date'  => __( 'Date', 'bulk-page-maker-light' ),
 
 		];
 	}
 
 	protected function column_default( $item, $column_name ) {
-		switch ( $column_name ) {
+		switch( $column_name ) {
 			case 'created_by':
 				return get_the_author_meta( 'display_name', $item->created_by );
-
+			
 			case 'post_date':
 				$mysqldate = strtotime( $item->$column_name );
-				return gmdate( 'Y/m/d H:i A', $mysqldate );
+				return date( 'Y/m/d H:i A', $mysqldate);
 
 			default:
 				return isset( $item->$column_name ) ? esc_html( $item->$column_name ) : '';
@@ -50,15 +48,15 @@ class Pages_List extends \WP_List_Table {
 		$actions['edit']   = sprintf(
 			'<a href="%s" title="%s">%s</a>',
 			esc_url( admin_url( '/post.php?post=' . $item->page_id . '&action=edit' ) ),
-			__( 'Edit', 'sh-bpm-light' ),
-			__( 'Edit', 'sh-bpm-light' )
+			__( 'Edit', 'bulk-page-maker-light' ),
+			__( 'Edit', 'bulk-page-maker-light' )
 		);
 
         $actions['delete'] = sprintf(
         	'<a href="%s" class="submitdelete" onclick="return confirm(\'Are you sure?\');" title="%s">%s</a>',
         	wp_nonce_url( admin_url( 'admin-post.php?page=bulk-page-maker&action=bpm-delete-action&id=' . $item->page_id ), 'bpm-delete-action' ),
-        	__( 'Delete', 'sh-bpm-light' ),
-        	__( 'Delete', 'sh-bpm-light' )
+        	__( 'Delete', 'bulk-page-maker-light' ),
+        	__( 'Delete', 'bulk-page-maker-light' )
         );
 
 		return sprintf(
@@ -69,7 +67,7 @@ class Pages_List extends \WP_List_Table {
 		);
 	}
 
-	protected function column_cb( $item ) {
+	protected function column_cb($item) {
 		return sprintf(
 			'<input type="checkbox" name="page_id[]" value="%d">',
 			$item->id
@@ -81,11 +79,11 @@ class Pages_List extends \WP_List_Table {
      *
      * @return array
      */
-    public function get_sortable_columns() {
+    function get_sortable_columns() {
         $sortable_columns = [
-			'post_date'  => [ 'created_at', true ],
+			'post_date'  => [ 'date', true ],
 			'post_type'  => [ 'post_type', true ],
-			'post_title' => [ 'post_title', true ],
+			'post_title' => [ 'post_title', true ]
         ];
 
         return $sortable_columns;
@@ -94,10 +92,10 @@ class Pages_List extends \WP_List_Table {
     /**
 	 * Prepares the list of items for displaying.
 	 * overridden from WP_List_Table
-     * @since 1
-     *
+	 *
 	 * @uses WP_List_Table::set_pagination_args()
 	 *
+	 * @since 3.1.0
 	 * @abstract
 	*/
 	public function prepare_items() {
@@ -108,34 +106,31 @@ class Pages_List extends \WP_List_Table {
 		$hidden       = [];
 		$sortable     = $this->get_sortable_columns();
 
-		$this->_column_headers = [ $column, $hidden, $sortable ];
+		$this->_column_headers = [$column, $hidden, $sortable];
 
 		$args = [
             'number' => $per_page,
             'offset' => $offset,
         ];
 
-        if ( ! empty( $_REQUEST['orderby'] ) && ! empty( $_REQUEST['order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
-			$allowed_keys = [ 'post_title', 'post_type', 'date', 'asc', 'desc' ];
-			$orderby      = sanitize_key( $_REQUEST['orderby'] ); // phpcs:ignore WordPress.Security.NonceVerification
-			$order        = sanitize_key( $_REQUEST['order'] ); // phpcs:ignore WordPress.Security.NonceVerification
+        if ( isset( $_REQUEST['orderby'] ) && isset( $_REQUEST['order'] ) ) {
+			$allowed_keys = ['orderby', 'order'];
+			$orderby      = sanitize_key( $_REQUEST['orderby'] );
+			$order        = sanitize_key( $_REQUEST['order'] );
 
-        	if ( in_array( $orderby, $allowed_keys, true ) ) {
+        	if( in_array($orderby, $allowed_keys, true) ) {
         		$args['orderby'] = $orderby;
         	}
 
-        	if ( in_array( $order, $allowed_keys, true ) ) {
-				$args['order'] = $order;
+        	if( in_array($order, $allowed_keys, true) ) {
+        		$args['order']   = $order;
         	}
         }
 
 		$this->items = bpmaker_get_pages( $args );
-
-		$this->set_pagination_args(
-            [
-			    'total_items' => bpmaker_get_pages_count(),
-			    'per_page'    => $per_page,
-		    ]
-        );
+		$this->set_pagination_args( [
+			'total_items' => bpmaker_get_pages_count(),
+			'per_page'    => $per_page,
+		] );
 	}
 }

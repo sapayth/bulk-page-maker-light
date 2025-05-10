@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+    .bpm-input {
+        @apply bpm-w-full !bpm-max-w-full bpm-appearance-none bpm-rounded-md bpm-bg-white bpm-py-1.5 bpm-pl-3 bpm-pr-8 bpm-text-base bpm-text-gray-900 bpm-outline bpm-outline-1 bpm--outline-offset-1 bpm-outline-gray-300 focus:bpm-outline focus:bpm-outline-2 focus:bpm--outline-offset-2 focus:bpm-outline-primary sm:bpm-text-sm/6;
+    }
+}

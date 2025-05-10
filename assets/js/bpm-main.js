@@ -5,7 +5,7 @@ function init() {
 function typeChangeHandler() {
 	var postType = document.getElementById('cmb_post_type').value;
 	var pageCmb = document.getElementById('page_id');
-	if(postType == 'post') {		
+	if (postType == 'post') {
 	    pageCmb.setAttribute('disabled', true);
 	    pageCmb.selectedIndex = 0;
 	} else {
