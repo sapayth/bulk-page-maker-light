@@ -39,6 +39,7 @@ yarn-error.log*
 
 
 # Environment files
+.env
 
 
 
@@ -72,4 +73,3 @@ Thumbs.db
 
 # .cursor/ (intentionally NOT ignored)
 
-config.bat
