@@ -4,8 +4,8 @@
   "description": "A Light plugin to generate bulk WordPress Pages or Posts",
   "main": "index.js",
   "scripts": {
-    "build": "wp-scripts build",
-    "start": "wp-scripts start --no-watch",
+    "build": "node init && wp-scripts build",
+    "start": "node init && wp-scripts start --no-watch",
     "watch": "CHOKIDAR_USEPOLLING=1 NODE_ENV=development wp-scripts start",
     "watch:poll": "wp-scripts start --no-watch && node scripts/watch-poll.js",
     "release": "scripts/package.sh",
