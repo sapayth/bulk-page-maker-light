@@ -1,0 +1,101 @@
+# DESCRIPTION: Alarm for history rewrites and the fa-brand-400.orc / folderOpen / padded-config malware family.
+# DESCRIPTION: Flags force-pushes, scans the pushed tree without running any repo code, opens an issue and fails.
+#
+# Install: save as .github/workflows/push-guard.yml in each repo. On its own it runs on every push
+# and PR, opens an issue on a force-push or a finding, and fails on a finding.
+#
+# To stop other workflows (builds, deploys) from running on an infected commit, call it as a job
+# in that workflow and make the jobs depend on it; `needs` only works within one workflow file:
+#
+#   jobs:
+#     guard:
+#       uses: ./.github/workflows/push-guard.yml
+#       permissions: { contents: read, issues: write }
+#     build:
+#       needs: guard
+#
+# Called runs only gate (fail); the standalone run opens the issue, so there is one issue per event.
+name: Push guard
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+    inputs:
+      called:
+        description: Set by callers; a called run only gates and leaves alerting to the standalone run.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out (files only; nothing is installed or executed)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scan for injection markers
+        id: scan
+        shell: bash
+        run: |
+          set -uo pipefail
+          hits=()
+          # 1. Dropper and its hiding files
+          while IFS= read -r f; do hits+=("dropper file: $f"); done < <(git ls-files | grep -E '\.orc$|(^|/)config\.bat$')
+          # 2. Hidden VS Code task that runs on folder open
+          while IFS= read -r f; do
+            grep -q '"folderOpen"' "$f" && hits+=("auto-run task: $f")
+            grep -q '"task.allowAutomaticTasks"' "$f" && hits+=("automatic tasks enabled: $f")
+          done < <(git ls-files | grep -E '(^|/)\.vscode/(tasks|settings)\.json$')
+          # 3. Payload padded onto a line after a long run of spaces, or known payload openings
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            if grep -qE "[[:space:]]{150,}[^[:space:]]|global\['!'\]=|var z = '-[0-9]|_\\\$_1e42|createRequire\(import\.meta\.url\);[[:space:]]*var module = \{ ?exports" "$f"; then
+              hits+=("padded/obfuscated payload: $f"); fi
+          done < <(git ls-files | grep -E '\.(c|m)?(j|t)sx?$|(^|/)init$' | grep -vE '(^|/)(node_modules|vendor|vendor-prefixed|dist|build)/|\.min\.')
+          # 4. Build/run hooks that launch the dropper
+          while IFS= read -r f; do hits+=("node init hook: $f"); done < <(git grep -lE "node init &&|exec\(['\"]node init" -- '*package.json' '*artisan' '*.php' 2>/dev/null)
+          # 5. Secrets file committed (one variant hid a loader URL in .env)
+          while IFS= read -r f; do hits+=("committed env file: $f"); done < <(git ls-files | grep -E '(^|/)\.env$')
+
+          {
+            echo "found=${#hits[@]}"
+            echo 'report<<EOF'
+            printf -- '- %s\n' "${hits[@]:-}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${hits[@]:-}"
+
+      # One issue per event: only the standalone push run alerts (not PR runs, not called runs),
+      # and bot force-pushes (Dependabot rebasing its PRs) are not alarms. The attacker pushes as you.
+      - name: Open an issue
+        if: >-
+          github.event_name == 'push' && inputs.called != true &&
+          (steps.scan.outputs.found != '0' || (github.event.forced == true && !endsWith(github.actor, '[bot]')))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.scan.outputs.report }}
+          FOUND: ${{ steps.scan.outputs.found }}
+          FORCED: ${{ github.event.forced }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          title="Push guard: $([ "$FOUND" != 0 ] && echo 'malware markers' || echo 'force-push') on $REF"
+          body=$(printf 'Ref: `%s`\nCommit: %s\nPushed by: %s\nForce-push: %s (previous tip: %s)\n\nFindings:\n%s\n\nIf you did not do this, assume your GitHub credentials are compromised: do not pull, open or build this commit; rotate credentials from a clean device; reset the branch to the previous tip.\n' \
+            "$REF" "$SHA" "$ACTOR" "${FORCED:-false}" "${BEFORE:-n/a}" "${REPORT:-none}")
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" || echo "::warning::could not open issue"
+
+      - name: Fail on findings
+        if: steps.scan.outputs.found != '0'
+        run: |
+          echo "::error::Injection markers found; see the scan step above"
+          exit 1
