@@ -1,106 +1,37 @@
-# DESCRIPTION: TEMPORARY. Audits npm/Composer dependencies and writes non-breaking fixes into the lockfiles only.
-# DESCRIPTION: No package code runs (no install, scripts and plugins off). Removed again before the PR is opened.
-name: Dependency audit (temporary)
+# DESCRIPTION: TEMPORARY. Builds the plugin with the old (master) and new lockfile and compares the output.
+# DESCRIPTION: Read-only token, no secrets. Removed again before the PR is opened.
+name: Dependency build check (temporary)
 
 on:
   push:
     branches: ['fix/npm-audit']
 
 permissions:
-  contents: write
-
-env:
-  NPM_FIX: 'true'            # run `npm audit fix` (non-breaking) on the lockfile
-  COMPOSER_FIX: 'false'  # update only the Composer packages that have advisories
-  NPM_ALSO_AUDIT_REF: '' # optional: also audit this branch's package-lock.json (empty = skip)
+  contents: read
 
 jobs:
-  audit:
-    if: github.ref == 'refs/heads/fix/npm-audit' && github.actor != 'github-actions[bot]'
+  build:
+    strategy:
+      matrix:
+        lock: [master, branch]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20'
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
-        with:
-          php-version: '8.3'
-          tools: composer:v2
-          coverage: none
-
-      - name: Audit before
+      - name: Use master's lockfile for the baseline build
+        if: matrix.lock == 'master'
+        run: git show origin/master:package-lock.json > package-lock.json
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Build
+        run: NODE_ENV=production npm run build
+      - name: Report the output
         run: |
-          mkdir -p /tmp/a
-          npm audit --json > /tmp/a/npm-before.json || true
-          npm audit --omit=dev --json > /tmp/a/npm-before-prod.json || true
-          composer audit --locked --format=json --abandoned=ignore > /tmp/a/composer-before.json 2>/dev/null || echo '{"advisories":{}}' > /tmp/a/composer-before.json
-
-      - name: Fix lockfiles (non-breaking only; nothing installed or executed)
-        run: |
-          if [ "$NPM_FIX" = true ]; then
-            npm audit fix --package-lock-only --ignore-scripts --no-fund || true
-          fi
-          if [ "$COMPOSER_FIX" = true ]; then
-            pkgs=$(jq -r '.advisories | if type=="object" then keys[] else empty end' /tmp/a/composer-before.json)
-            if [ -n "$pkgs" ]; then
-              composer update $pkgs --with-dependencies --no-install --no-scripts --no-plugins --no-interaction --no-progress
-            fi
-          fi
-
-      - name: Audit after
-        run: |
-          npm audit --json > /tmp/a/npm-after.json || true
-          npm audit --omit=dev --json > /tmp/a/npm-after-prod.json || true
-          composer audit --locked --format=json --abandoned=ignore > /tmp/a/composer-after.json 2>/dev/null || echo '{"advisories":{}}' > /tmp/a/composer-after.json
-          if [ -n "$NPM_ALSO_AUDIT_REF" ]; then
-            mkdir -p /tmp/ref && cp package.json /tmp/ref/
-            git fetch -q --depth=1 origin "$NPM_ALSO_AUDIT_REF"
-            git show FETCH_HEAD:package-lock.json > /tmp/ref/package-lock.json
-            (cd /tmp/ref && npm audit --json > /tmp/a/npm-ref.json || true; npm audit --omit=dev --json > /tmp/a/npm-ref-prod.json || true)
-          fi
-
-      - name: Print summary (read back from the job log)
-        run: |
-          node - <<'JS'
-          const fs = require('fs'); const r = f => { try { return JSON.parse(fs.readFileSync('/tmp/a/' + f, 'utf8')); } catch { return null; } };
-          const out = (...a) => console.log('AUDIT|' + a.join('|'));
-          for (const tag of ['before', 'after', 'ref']) {
-            const all = r(`npm-${tag}.json`), prod = r(`npm-${tag}-prod.json`);
-            if (!all) continue;
-            const prodNames = new Set(Object.keys((prod && prod.vulnerabilities) || {}));
-            const m = (all.metadata && all.metadata.vulnerabilities) || {};
-            out('npm-total', tag, ['critical','high','moderate','low'].map(s => `${s}=${m[s]||0}`).join(','), `prod=${prodNames.size}`);
-            for (const [name, v] of Object.entries(all.vulnerabilities || {})) {
-              const fix = v.fixAvailable === true ? 'yes' : v.fixAvailable ? `major:${v.fixAvailable.name}@${v.fixAvailable.version}` : 'none';
-              const titles = (v.via || []).filter(x => typeof x === 'object').map(x => x.title).slice(0, 2).join(' / ');
-              out('npm', tag, name, v.severity, v.isDirect ? 'direct' : 'transitive', prodNames.has(name) ? 'PROD' : 'dev', `fix=${fix}`, `range=${v.range}`, titles.slice(0, 160));
-            }
-          }
-          for (const tag of ['before', 'after']) {
-            const c = r(`composer-${tag}.json`); const adv = (c && c.advisories) || {};
-            const list = Array.isArray(adv) ? [] : Object.entries(adv);
-            out('composer-total', tag, list.reduce((n, [, a]) => n + a.length, 0));
-            for (const [pkg, items] of list) for (const a of items) out('composer', tag, pkg, a.severity || '?', a.cve || a.advisoryId, a.affectedVersions, (a.title || '').slice(0, 140));
-          }
-          JS
-          git diff --stat
-
-      - name: Commit the lockfile changes
-        run: |
-          git diff --quiet -- package-lock.json package.json composer.lock && { echo "AUDIT|commit|none"; exit 0; }
-          git add package-lock.json package.json composer.lock
-          git -c user.name=Claude -c user.email=noreply@anthropic.com commit -q -F - <<'MSG'
-          fix: update npm packages past their open advisories
-
-          Generated in CI with lockfile-only updates: npm audit fix
-          --package-lock-only --ignore-scripts and composer update --no-install
-          --no-scripts --no-plugins. No package code was installed or run.
-
-          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-          Claude-Session: https://claude.ai/code/session_01HM1ssTxGrMETwus5i1kwBr
-          MSG
-          git push -q origin HEAD:fix/npm-audit
-          echo "AUDIT|commit|$(git rev-parse HEAD)"
+          echo "BUILD|${{ matrix.lock }}|node $(node -v)|wp-scripts $(node -p "require('@wordpress/scripts/package.json').version")|webpack $(node -p "require('webpack/package.json').version")"
+          for f in build/*; do echo "BUILD|${{ matrix.lock }}|$f|$(wc -c < "$f")|$(sha256sum "$f" | cut -c1-12)"; done
+          for a in build/*.asset.php; do echo "BUILD|${{ matrix.lock }}|deps|$(cat "$a")"; done
